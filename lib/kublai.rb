@@ -61,10 +61,8 @@ module Kublai
     end
 
     def current_price
-      market_depth = get_market_depth(1)
-      ask = market_depth['ask'][0]['price']
-      bid = market_depth['bid'][0]['price']
-      (ask + bid) / 2
+      ts = ticker
+      (ts['buy'].to_f + ts['sell'].to_f) / 2
     end
 
     def ticker
