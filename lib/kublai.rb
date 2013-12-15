@@ -8,6 +8,8 @@ require 'json'
 module Kublai
   class BTCChina
 
+    attr_accessor :errors, :infos
+
     def initialize(access='', secret='')
       @access_key = access
       @secret_key = secret
@@ -26,10 +28,10 @@ module Kublai
       get_account_info['profile']['btc_deposit_address']
     end
 
-    def get_market_depth
+    def get_market_depth(limit = 10)
       post_data = initial_post_data
       post_data['method'] = 'getMarketDepth2'
-      post_data['params'] = []
+      post_data['params'] = [limit]
       post_request(post_data)["market_depth"]
     end
 
@@ -59,7 +61,7 @@ module Kublai
     end
 
     def current_price
-      market_depth = get_market_depth
+      market_depth = get_market_depth(1)
       ask = market_depth['ask'][0]['price']
       bid = market_depth['bid'][0]['price']
       (ask + bid) / 2
@@ -67,6 +69,58 @@ module Kublai
 
     def ticker
       get_request("https://data.btcchina.com/data/ticker")
+    end
+
+    # params type
+    # all | fundbtc | withdrawbtc | fundmoney | withdrawmoney | 
+    # refundmoney | buybtc | sellbtc | tradefee
+    def get_transactions(type = 'all', limit = 10)
+      post_data = initial_post_data
+      post_data['method'] = 'getTransactions'
+      post_data['params'] = [type, limit]
+      post_request(post_data)
+    end
+
+    def get_deposits(currency = 'BTC', pendingonly = true)
+      post_data = initial_post_data
+      post_data['method'] = 'getDeposits'
+      post_data['params'] = [currency, pendingonly]
+      post_request(post_data)
+    end
+
+    def get_withdrawal(id)
+      post_data = initial_post_data
+      post_data['method'] = 'getWithdrawal'
+      post_data['params'] = [id]
+      post_request(post_data)
+    end
+
+    def get_withdrawals(currency = 'BTC', pendingonly = true)
+      post_data = initial_post_data
+      post_data['method'] = 'getWithdrawals'
+      post_data['params'] = [currency, pendingonly]
+      post_request(post_data)
+    end
+
+    def request_withdrawal(currency, amount)
+      post_data = initial_post_data
+      post_data['method'] = 'requestWithdrawal'
+      post_data['params'] = [currency, amount]
+      post_request(post_data)
+    end
+
+    def get_order(id)
+      post_data = initial_post_data
+      post_data['method'] = 'getOrder'
+      post_data['params'] = [id]
+      post_request(post_data)
+    end
+
+    def get_orders(openonly = true)
+      post_data = initial_post_data
+      post_data['method'] = 'getOrders'
+      post_data['params'] = [openonly]
+      post_request(post_data)
     end
 
     private
@@ -116,16 +170,27 @@ module Kublai
     end
 
     def response(response_data)
+      self.errors, self.infos = {}, {}
       if response_data.code == '200' && response_data.body['result']
-        JSON.parse(response_data.body)['result']
+        self.infos = JSON.parse(response_data.body)
+        self.infos['result']
       elsif response_data.code == '200' && response_data.body['ticker']
-        JSON.parse(response_data.body)['ticker']
+        self.infos = JSON.parse(response_data.body)
+        self.infos['ticker']
       elsif response_data.code == '200' && response_data.body['error']
         error = JSON.parse(response_data.body)
+        self.errors = {
+          code: error['error']['code'], 
+          message: error['error']['message']
+        }
         warn("Error Code: #{error['error']['code']}")
         warn("Error Message: #{error['error']['message']}")
         false
       else
+        self.errors = {
+          code: response_data.code, 
+          message: response_data.message
+        }
         warn("Error Code: #{response_data.code}")
         warn("Error Message: #{response_data.message}")
         warn("check your accesskey/privatekey") if response_data.code == '401'
@@ -135,7 +200,9 @@ module Kublai
 
     def params_string(post_data)
       post_data['params'] = post_data['params'].join(',')
-      params_hash(post_data).collect{|k, v| "#{k}=#{v}"} * '&'
+      str = params_hash(post_data).collect{|k, v| "#{k}=#{v}"} * '&'
+
+      str.gsub("[\[\] ]", "").gsub("'", '').gsub("true", '1').gsub("false", '')
     end
 
     def params_hash(post_data)
